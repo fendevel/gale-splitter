@@ -25,7 +25,12 @@ main :: proc () {
 
     for arg in os2.args {
         if strings.starts_with(arg, "-") {
-            if arg != "-h" && arg != "--help" {
+            if slice.contains([]string{"-v", "--version" }, arg) {
+                fmt.printfln("gale-splitter version 1.2")
+                show_help = false
+            } else if slice.contains([]string{ "-h", "--help" }, arg) {
+                show_help = true
+            } else {
                 fmt.printfln("{}: unrecognised option \"{}\"", ERROR, arg)
                 os2.exit(1)
             }
@@ -83,6 +88,8 @@ main :: proc () {
             src_w := int(frame.width)
             src_h := int(frame.height)
 
+            frame_tcol := frame.trans_color
+
             for layer, i in frame.layers {
                 out_path := fmt.ctprintf("{}/f{}_{}.png", out_dir, j, layer.name)
                 status: i32
@@ -92,7 +99,7 @@ main :: proc () {
                 minaabb: [2]int = max(int)
                 maxaabb: [2]int = min(int)
 
-                tcol := u32(layer.trans_color) if frame.trans_color == -1 else u32(frame.trans_color)
+                layer_tcol := layer.trans_color
 
                 switch frame.bpp {
                     case 24: {
@@ -101,7 +108,7 @@ main :: proc () {
                                 src: u32
                                 mem.copy(&src, &layer.data[y*src_w*3 + x*3], 3)
                                 col: [4]byte
-                                if src != tcol {
+                                if int(src) != layer_tcol && int(src) != frame_tcol {
                                     col.bgr = (transmute([4]byte)src).rgb
                                     col.a = 0xff
 
@@ -126,7 +133,7 @@ main :: proc () {
                                 src_index := layer.data[y*frame.width + x]
                                 col: [4]byte
 
-                                if src_index != u8(tcol) {
+                                if int(src_index) != layer_tcol && int(src_index) != frame_tcol {
                                     col.rgb = frame.palette[src_index]
                                     col.a = 0xff
 
@@ -151,7 +158,7 @@ main :: proc () {
                                 src_index := (layer.data[y*(src_w/2) + x/2] >> (u8(1 - (x % 2))*4)) & 0xf
                                 col: [4]byte
 
-                                if src_index != u8(tcol) {
+                                if int(src_index) != layer_tcol && int(src_index) != frame_tcol {
                                     col.rgb = frame.palette[src_index]
                                     col.a = 0xff
 
@@ -176,7 +183,7 @@ main :: proc () {
                                 src_index := (layer.data[y*(src_w/8) + x/8] >> (u8(7 - (x % 8)))) & 1
                                 col: [4]byte
 
-                                if src_index != u8(tcol) {
+                                if int(src_index) != layer_tcol && int(src_index) != frame_tcol {
                                     col.rgb = frame.palette[src_index]
                                     col.a = 0xff
 
@@ -228,8 +235,8 @@ main :: proc () {
     }
 
     if show_help {
-        fmt.printfln("USAGE: gale-splitter -h")
-        fmt.printfln("       gale-splitter --help")
+        fmt.printfln("USAGE: gale-splitter -h|--help")
+        fmt.printfln("       gale-splitter -v|--version")
         fmt.printfln("       gale-splitter file0.gal file1.gal file2.gal")
     }
 }
