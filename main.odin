@@ -80,8 +80,6 @@ main :: proc () {
                 continue
             }
 
-            frame_tcol := u32(frame.trans_color)
-
             src_w := int(frame.width)
             src_h := int(frame.height)
 
@@ -94,7 +92,7 @@ main :: proc () {
                 minaabb: [2]int = max(int)
                 maxaabb: [2]int = min(int)
 
-                layer_tcol := u32(layer.trans_color)
+                tcol := u32(layer.trans_color) if frame.trans_color == -1 else u32(frame.trans_color)
 
                 switch frame.bpp {
                     case 24: {
@@ -103,7 +101,7 @@ main :: proc () {
                                 src: u32
                                 mem.copy(&src, &layer.data[y*src_w*3 + x*3], 3)
                                 col: [4]byte
-                                if src != layer_tcol && src != frame_tcol {
+                                if src != tcol {
                                     col.bgr = (transmute([4]byte)src).rgb
                                     col.a = 0xff
 
@@ -128,8 +126,8 @@ main :: proc () {
                                 src_index := layer.data[y*frame.width + x]
                                 col: [4]byte
 
-                                if src_index != u8(frame_tcol) && src_index != u8(layer_tcol) {
-                                    col.bgr = frame.palette[src_index]
+                                if src_index != u8(tcol) {
+                                    col.rgb = frame.palette[src_index]
                                     col.a = 0xff
 
                                     minaabb.x = min(minaabb.x, x)
@@ -150,11 +148,36 @@ main :: proc () {
                     case 4: {
                         for y in 0..<src_h {
                             for x in 0..<src_w {
-                                src_index := (layer.data[y*(src_w/2) + x/2] >> u8(x % 2)*4) & 4
+                                src_index := (layer.data[y*(src_w/2) + x/2] >> (u8(1 - (x % 2))*4)) & 0xf
                                 col: [4]byte
 
-                                if src_index != u8(frame_tcol) && src_index != u8(layer_tcol) {
-                                    col.bgr = frame.palette[src_index]
+                                if src_index != u8(tcol) {
+                                    col.rgb = frame.palette[src_index]
+                                    col.a = 0xff
+
+                                    minaabb.x = min(minaabb.x, x)
+                                    minaabb.y = min(minaabb.y, y)
+                                    
+                                    maxaabb.x = max(maxaabb.x, x + 1)
+                                    maxaabb.y = max(maxaabb.y, y + 1)
+                                }
+
+                                if layer.alpha_on {
+                                    col.a = layer.alpha
+                                }
+
+                                dst_data[y*dst_w + x] = col
+                            }
+                        }
+                    }
+                    case 1: {
+                        for y in 0..<src_h {
+                            for x in 0..<src_w {
+                                src_index := (layer.data[y*(src_w/8) + x/8] >> (u8(7 - (x % 8)))) & 1
+                                col: [4]byte
+
+                                if src_index != u8(tcol) {
+                                    col.rgb = frame.palette[src_index]
                                     col.a = 0xff
 
                                     minaabb.x = min(minaabb.x, x)
