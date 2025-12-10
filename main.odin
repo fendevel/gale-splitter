@@ -12,6 +12,9 @@ import "vendor:stb/image"
 
 import "gale"
 
+VERSION_MAJOR :: 1
+VERSION_MINOR :: 3
+
 ERROR :: ansi.CSI + ansi.FG_RED + ansi.SGR + "error" + ansi.CSI + ansi.RESET + ansi.SGR
 SUCCESS :: ansi.CSI + ansi.FG_GREEN + ansi.SGR + "success" + ansi.CSI + ansi.RESET + ansi.SGR
 SKIP :: ansi.CSI + ansi.FG_YELLOW + ansi.SGR + "skip" + ansi.CSI + ansi.RESET + ansi.SGR
@@ -38,7 +41,7 @@ main :: proc () {
     for arg in os2.args {
         if strings.starts_with(arg, "-") {
             if slice.contains([]string{"-v", "--version" }, arg) {
-                fmt.printfln("gale-splitter version 1.2")
+                fmt.printfln("gale-splitter version {}.{}", VERSION_MAJOR, VERSION_MINOR)
                 show_help = false
             } else if slice.contains([]string{ "-h", "--help" }, arg) {
                 show_help = true
