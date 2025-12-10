@@ -16,6 +16,18 @@ ERROR :: ansi.CSI + ansi.FG_RED + ansi.SGR + "error" + ansi.CSI + ansi.RESET + a
 SUCCESS :: ansi.CSI + ansi.FG_GREEN + ansi.SGR + "success" + ansi.CSI + ansi.RESET + ansi.SGR
 SKIP :: ansi.CSI + ansi.FG_YELLOW + ansi.SGR + "skip" + ansi.CSI + ansi.RESET + ansi.SGR
 
+RGB565 :: bit_field u16 {
+    r: u8 | 5,
+    g: u8 | 6,
+    b: u8 | 5,
+}
+
+RGB555 :: bit_field u16 {
+    r: u8 | 5,
+    g: u8 | 5,
+    b: u8 | 5,
+}
+
 colstr :: proc(str: string, col: string, allocator := context.temp_allocator) -> string {
     return fmt.aprintf(ansi.CSI + "{}" + ansi.SGR + "{}" + ansi.CSI + ansi.RESET + ansi.SGR, col, str, allocator = allocator)
 }
@@ -69,22 +81,12 @@ main :: proc () {
             os2.make_directory(out_dir)
         }
 
-        if file.bpp == 15 || file.bpp == 16 {
-            fmt.printfln("{}: unsupported bpp: {}", ERROR, file.bpp)
-            continue
-        }
-        
         dst_w := int(file.width)
         dst_h := int(file.height)
         dst_pitch := dst_w*size_of([4]byte)
         dst_data := make([][4]byte, dst_w*dst_h, context.temp_allocator)
 
         for frame, j in file.frames {
-            if frame.bpp == 15 || frame.bpp == 16 {
-                fmt.printfln("{}: unsupported frame bpp: {}", ERROR, frame.bpp)
-                continue
-            }
-
             src_w := int(frame.width)
             src_h := int(frame.height)
 
@@ -110,6 +112,64 @@ main :: proc () {
                                 col: [4]byte
                                 if int(src) != layer_tcol && int(src) != frame_tcol {
                                     col.bgr = (transmute([4]byte)src).rgb
+                                    col.a = 0xff
+
+                                    minaabb.x = min(minaabb.x, x)
+                                    minaabb.y = min(minaabb.y, y)
+                                    
+                                    maxaabb.x = max(maxaabb.x, x + 1)
+                                    maxaabb.y = max(maxaabb.y, y + 1)
+                                }
+
+                                if layer.alpha_on {
+                                    col.a = layer.alpha
+                                }
+
+                                dst_data[y*dst_w + x] = col
+                            }
+                        }
+                    }
+                    case 16: {
+                        for y in 0..<src_h {
+                            for x in 0..<src_w {
+                                src: u16
+                                mem.copy(&src, &layer.data[y*src_w*2 + x*2], 2)
+                                col: [4]byte
+                                if int(src) != layer_tcol && int(src) != frame_tcol {
+                                    rgb := transmute(RGB565)src
+                                    col.b = u8(((u32(rgb.r) + 1) << 3) - 1)
+                                    col.g = u8(((u32(rgb.g) + 1) << 2) - 1)
+                                    col.r = u8(((u32(rgb.b) + 1) << 3) - 1)
+                                    
+                                    col.a = 0xff
+
+                                    minaabb.x = min(minaabb.x, x)
+                                    minaabb.y = min(minaabb.y, y)
+                                    
+                                    maxaabb.x = max(maxaabb.x, x + 1)
+                                    maxaabb.y = max(maxaabb.y, y + 1)
+                                }
+
+                                if layer.alpha_on {
+                                    col.a = layer.alpha
+                                }
+
+                                dst_data[y*dst_w + x] = col
+                            }
+                        }
+                    }
+                    case 15: {
+                        for y in 0..<src_h {
+                            for x in 0..<src_w {
+                                src: u16
+                                mem.copy(&src, &layer.data[y*src_w*2 + x*2], 2)
+                                col: [4]byte
+                                if int(src) != layer_tcol && int(src) != frame_tcol {
+                                    rgb := transmute(RGB555)src
+                                    col.b = u8(((u32(rgb.r) + 1) << 3) - 1)
+                                    col.g = u8(((u32(rgb.g) + 1) << 3) - 1)
+                                    col.r = u8(((u32(rgb.b) + 1) << 3) - 1)
+                                    
                                     col.a = 0xff
 
                                     minaabb.x = min(minaabb.x, x)
