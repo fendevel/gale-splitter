@@ -1,15 +1,17 @@
 package gale
 
-import "core:log"
-import "base:runtime"
+import "core:compress"
+import "core:fmt"
 import "core:mem"
 import "core:bytes"
 import "core:strconv"
 import "core:slice"
 import "core:time"
-import "core:strings"
 import "core:compress/zlib"
 import "core:encoding/xml"
+
+XML_BACKING_SIZE :: mem.Megabyte
+INFLATE_BUFFER_BACKING_SIZE :: mem.Megabyte*0x10
 
 FrameDisposal :: enum {
 	Unspecified = 0,
@@ -34,6 +36,7 @@ Layer :: struct {
 	lock: bool,
 
     data: []byte `fmt:"-"`,
+    data_alpha: []byte `fmt:"-"`,
 }
 
 Milliseconds :: distinct int
@@ -69,22 +72,52 @@ Gale :: struct {
 	frames: []Frame,
 }
 
-parse_buffer :: proc(buffer: []byte, allocator := context.temp_allocator) -> (gale: Gale, good: bool) {
+decompress :: proc(dst_buffer: []byte, src_buffer: []byte, offset: ^int, allocator := context.temp_allocator) -> []byte {
+    dst_buffer := bytes.Buffer {
+        buf = slice.into_dynamic(dst_buffer),
+    }
+
+    compressed_size := mem.reinterpret_copy(u32, &src_buffer[offset^])
+    offset^ += 4
+
+    if compressed_size == 0 {
+        return nil
+    }
+
+    ctx := compress.Context_Memory_Input{}
+    ctx.input_data = src_buffer[offset^:][:compressed_size]
+    ctx.output = &dst_buffer
+    
+    if err := zlib.inflate_from_context(&ctx); err != nil {
+        panic(fmt.tprint(err))
+    }
+
+    offset^ += int(compressed_size)
+
+    return slice.clone(dst_buffer.buf[:ctx.bytes_written], allocator)
+}
+
+Error :: enum {
+    Success,
+    Bad_Version,
+}
+
+parse_buffer :: proc(buffer: []byte, allocator := context.temp_allocator) -> (gale: Gale, error: Error) {
 	header: Header = mem.reinterpret_copy(Header, &buffer[0])
 
-	if string(header.sig[:]) != "GaleX200"	{
-        return {}, false
+	if string(header.sig[:]) != "GaleX200" {
+        return {}, .Bad_Version
 	}
 
-    compressed_xml := buffer[size_of(Header):][:header.compressed_xml_length]
+    @static xml_backing: [XML_BACKING_SIZE]byte
 
-    xml_decompbuff: bytes.Buffer
-    bytes.buffer_init_allocator(&xml_decompbuff, 0, mem.Kilobyte*0x10, context.temp_allocator)
+    xml_decompbuff := bytes.Buffer {
+        buf = slice.into_dynamic(xml_backing[:]),
+    }
+    compressed_xml := buffer[size_of(Header):][:header.compressed_xml_length]
     zlib.inflate_from_byte_array(compressed_xml, &xml_decompbuff, false)
 
     doc: ^xml.Document = xml.parse_bytes(xml_decompbuff.buf[:]) or_else panic("???")
-
-    log.debug(string(doc.input))
 
     if val, has_val := xml.find_attribute_val_by_key(doc, 0, "Version"); has_val {
         gale.version = strconv.parse_int(val) or_else panic("???")
@@ -108,11 +141,11 @@ parse_buffer :: proc(buffer: []byte, allocator := context.temp_allocator) -> (ga
     }
 
     if val, has_val := xml.find_attribute_val_by_key(doc, 0, "SyncPal"); has_val {
-        gale.sync_pal = strings.has_prefix(val, "1")
+        gale.sync_pal = val == "1"
     }
 
     if val, has_val := xml.find_attribute_val_by_key(doc, 0, "Randomized"); has_val {
-        gale.randomized = strings.has_prefix(val, "1")
+        gale.randomized = val == "1"
     }
 
     if val, has_val := xml.find_attribute_val_by_key(doc, 0, "CompType"); has_val {
@@ -206,7 +239,7 @@ parse_buffer :: proc(buffer: []byte, allocator := context.temp_allocator) -> (ga
             }
 
             if val, has_val := xml.find_attribute_val_by_key(doc, layer_id, "Visible"); has_val {
-                layer.visible = strings.has_prefix(val, "1")
+                layer.visible = val == "1"
             }
 
             if val, has_val := xml.find_attribute_val_by_key(doc, layer_id, "TransColor"); has_val {
@@ -220,7 +253,7 @@ parse_buffer :: proc(buffer: []byte, allocator := context.temp_allocator) -> (ga
             }
 
             if val, has_val := xml.find_attribute_val_by_key(doc, layer_id, "AlphaOn"); has_val {
-                layer.alpha_on = strings.has_prefix(val, "1")
+                layer.alpha_on = val == "1"
             }
 
             if val, has_val := xml.find_attribute_val_by_key(doc, layer_id, "Name"); has_val {
@@ -228,35 +261,21 @@ parse_buffer :: proc(buffer: []byte, allocator := context.temp_allocator) -> (ga
             }
 
             if val, has_val := xml.find_attribute_val_by_key(doc, layer_id, "Lock"); has_val {
-                layer.lock = strings.has_prefix(val, "1")
+                layer.lock = val == "1"
             }
         }
     }
 
-    offset := size_of(Header) + header.compressed_xml_length
-    block_index := 0
+    offset := size_of(Header) + int(header.compressed_xml_length)
 
-    buff: bytes.Buffer
-    bytes.buffer_init_allocator(&buff, 0, mem.Megabyte*0x10, context.temp_allocator)
+    @static backing: [INFLATE_BUFFER_BACKING_SIZE]byte
 
     for &frame in gale.frames {
         for &layer in frame.layers {
-            defer bytes.buffer_reset(&buff)
-
-            compressed_size := mem.reinterpret_copy(u32, &buffer[offset])
-            offset += 4
-
-            src_len := compressed_size
-            zlib.inflate_from_byte_array(buffer[offset:][:compressed_size], &buff)
-
-            layer.data = slice.clone(buff.buf[:], allocator)
-
-            offset += src_len + 4
-            block_index += 1
+            layer.data = decompress(backing[:], buffer, &offset)
+            layer.data_alpha = decompress(backing[:], buffer, &offset)
         }
     }
-
-    good = true
 
     return
 }
