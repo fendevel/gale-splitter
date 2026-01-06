@@ -289,12 +289,18 @@ main :: proc () {
                     }
                 }
 
-                if !noskip && (minaabb == max(int) && maxaabb == min(int)) {
-                    fmt.printfln("   {}: layer {}{}{}{}{} of frame {}{}{}{}{} \"{}\" is empty", SKIP, 
-                        colstr("[", ansi.FG_BRIGHT_BLACK), colstr(fmt.tprintf("{: 2d}", layer_counter), ansi.FG_CYAN), colstr("/", ansi.FG_BRIGHT_BLACK), colstr(fmt.tprintf("{: 2d}", len(frame.layers)), ansi.FG_CYAN), colstr("]", ansi.FG_BRIGHT_BLACK), 
-                        colstr("[", ansi.FG_BRIGHT_BLACK), colstr(fmt.tprintf("{: 2d}", frame_counter), ansi.FG_CYAN), colstr("/", ansi.FG_BRIGHT_BLACK), colstr(fmt.tprintf("{: 2d}", len(file.frames)), ansi.FG_CYAN), colstr("]", ansi.FG_BRIGHT_BLACK),
-                        layer.name)
-                    continue
+
+                if minaabb == max(int) && maxaabb == min(int) {
+                    if !noskip {
+                        fmt.printfln("   {}: layer {}{}{}{}{} of frame {}{}{}{}{} \"{}\" is empty", SKIP, 
+                            colstr("[", ansi.FG_BRIGHT_BLACK), colstr(fmt.tprintf("{: 2d}", layer_counter), ansi.FG_CYAN), colstr("/", ansi.FG_BRIGHT_BLACK), colstr(fmt.tprintf("{: 2d}", len(frame.layers)), ansi.FG_CYAN), colstr("]", ansi.FG_BRIGHT_BLACK), 
+                            colstr("[", ansi.FG_BRIGHT_BLACK), colstr(fmt.tprintf("{: 2d}", frame_counter), ansi.FG_CYAN), colstr("/", ansi.FG_BRIGHT_BLACK), colstr(fmt.tprintf("{: 2d}", len(file.frames)), ansi.FG_CYAN), colstr("]", ansi.FG_BRIGHT_BLACK),
+                            layer.name)
+                        continue
+                    } else {
+                        minaabb = 0
+                        maxaabb = { int(frame.width), int(frame.height) }
+                    }
                 }
 
                 final_w := (maxaabb.x - minaabb.x) if !noclip else frame.width
